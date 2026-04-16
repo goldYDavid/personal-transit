@@ -10,9 +10,6 @@ export function useAuth() {
     authService
       .getCurrentUser()
       .then((currentUser) => setUser(currentUser))
-      .catch((error) => {
-        setLoginError(error.message || 'לא ניתן לאתחל התחברות.');
-      })
       .finally(() => setLoading(false));
 
     const subscription = authService.onAuthStateChange((nextUser) => {

@@ -1,16 +1,11 @@
 import { openBusService } from './openBusService';
+import { rankingService } from './rankingService';
 import { getTomorrowAtHour, toIsoAtTodayTime } from '../utils/timeUtils';
 import { getDirectionPreferences, validatePreferences } from '../utils/tripUtils';
-import { getSupabaseClient } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import { appConfig } from '../config/appConfig';
 
 async function getUserPlanningPreferences(userId) {
-  const supabase = getSupabaseClient();
-
-  if (!supabase) {
-    throw new Error('חסרים משתני Supabase ולכן לא ניתן לטעון העדפות משתמש.');
-  }
-
   const { data, error } = await supabase
     .from('user_preferences')
     .select('*')
@@ -80,6 +75,6 @@ export const plannerService = {
       throw new Error('נמצאו נסיעות אך אין התאמה לקווים המועדפים שהוגדרו.');
     }
 
-    return filtered;
+    return rankingService.rankTrips(filtered);
   }
 };

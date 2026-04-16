@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { plannerService } from '../services/tripPlannerService';
 import { realtimeService } from '../services/realtimeService';
-import { rankingService } from '../services/rankingService';
 import { appConfig } from '../config/appConfig';
 import DirectionButtons from './DirectionButtons';
 import TimeSelector from './TimeSelector';
@@ -18,20 +17,23 @@ function MainScreen({ user, onLogout }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const planningTime = useMemo(
+    () => plannerService.resolveRequestedTime(timeMode, manualTime),
+    [timeMode, manualTime]
+  );
+
   const loadTrips = async () => {
     setError('');
     setLoading(true);
     try {
-      const requestedAt = plannerService.resolveRequestedTime(timeMode, manualTime);
       const planned = await plannerService.getPersonalTrips({
         userId: user.id,
         direction,
-        requestedAt
+        requestedAt: planningTime
       });
 
       const withRealtime = await realtimeService.attachRealtimeStatus(planned);
-      const ranked = rankingService.rankTrips(withRealtime);
-      setResults(ranked);
+      setResults(withRealtime);
     } catch (serviceError) {
       setResults([]);
       setError(serviceError.message || 'לא ניתן לתכנן נסיעות כרגע.');
@@ -43,7 +45,7 @@ function MainScreen({ user, onLogout }) {
   useEffect(() => {
     loadTrips();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [direction, timeMode, manualTime, user.id]);
+  }, [direction, planningTime]);
 
   return (
     <div>
