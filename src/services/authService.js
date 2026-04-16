@@ -41,9 +41,32 @@ export const authService = {
     } = await supabase.auth.getUser();
 
     if (error) {
+      if (error.message?.includes('Auth session missing')) {
+        return null;
+      }
+
       throw error;
     }
 
+    return user;
+  },
+
+  onAuthStateChange(callback) {
+    if (!supabase) {
+      return {
+        unsubscribe() {}
+      };
+    }
+
+    const {
+      data: { subscription }
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      callback(session?.user || null);
+    });
+
+    return subscription;
+  }
+};
     return user;
   },
 
