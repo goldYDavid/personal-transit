@@ -51,7 +51,5 @@ npm run build
 
 ההגדרה כוללת:
 - בניית פרויקט Vite עם `npm ci`
-ההגדרה כוללת:
-- בניית פרויקט Vite
 - העלאת תיקיית `dist`
 - פריסה ל-GitHub Pages תחת הנתיב `/personal-transit/`
