@@ -67,22 +67,3 @@ export const authService = {
     return subscription;
   }
 };
-    return user;
-  },
-
-  onAuthStateChange(callback) {
-    if (!supabase) {
-      return {
-        unsubscribe() {}
-      };
-    }
-
-    const {
-      data: { subscription }
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      callback(session?.user || null);
-    });
-
-    return subscription;
-  }
-};
