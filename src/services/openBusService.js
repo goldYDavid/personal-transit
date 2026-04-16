@@ -21,11 +21,22 @@ async function request(path, params = {}) {
     throw new Error('שגיאת רשת מול OpenBus. נסה שוב בעוד רגע.');
   }
 
+  const rawBody = await response.text();
+
   if (!response.ok) {
-    throw new Error('OpenBus לא החזיר תשובה תקינה.');
+    const serverMessage = rawBody.trim();
+    throw new Error(serverMessage || `HTTP ${response.status} ${response.statusText}`);
   }
 
-  return response.json();
+  if (!rawBody.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(rawBody);
+  } catch (_parseError) {
+    throw new Error(rawBody);
+  }
 }
 
 export const openBusService = {
