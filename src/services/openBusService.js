@@ -16,6 +16,7 @@ async function request(path, params = {}) {
 
   let response;
   try {
+    console.log('OPENBUS URL:', url.toString());
     response = await fetch(url.toString());
   } catch (_networkError) {
     throw new Error('שגיאת רשת מול OpenBus. נסה שוב בעוד רגע.');
