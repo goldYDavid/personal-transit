@@ -45,6 +45,12 @@ npm run build
 הפריסה מתבצעת אוטומטית על ידי GitHub Actions בקובץ:
 `.github/workflows/deploy.yml`
 
+לפני הרצה ראשונה ב-GitHub:
+- להפעיל Pages בריפו תחת **Settings → Pages**
+- לבחור **Build and deployment source: GitHub Actions**
+
+ההגדרה כוללת:
+- בניית פרויקט Vite עם `npm ci`
 ההגדרה כוללת:
 - בניית פרויקט Vite
 - העלאת תיקיית `dist`
