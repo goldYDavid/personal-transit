@@ -2,6 +2,16 @@ import { adaptOpenBusTrip, adaptStops } from '../adapters/openBusAdapter';
 
 const baseUrl = import.meta.env.VITE_OPENBUS_BASE_URL;
 
+function buildServerErrorMessage({ response, rawBody, url }) {
+  const body = rawBody.trim();
+
+  if (body) {
+    return `${response.status} ${response.statusText}\n${url.toString()}\n${body}`;
+  }
+
+  return `${response.status} ${response.statusText}\n${url.toString()}\nאין גוף תשובה`;
+}
+
 async function request(path, params = {}) {
   if (!baseUrl) {
     throw new Error('חסר משתנה סביבה VITE_OPENBUS_BASE_URL עבור נתוני תחבורה אמיתיים.');
@@ -19,14 +29,13 @@ async function request(path, params = {}) {
     console.log('OPENBUS URL:', url.toString());
     response = await fetch(url.toString());
   } catch (_networkError) {
-    throw new Error('שגיאת רשת מול OpenBus. נסה שוב בעוד רגע.');
+    throw new Error(`שגיאת רשת מול OpenBus\n${url.toString()}`);
   }
 
   const rawBody = await response.text();
 
   if (!response.ok) {
-    const serverMessage = rawBody.trim();
-    throw new Error(serverMessage || `HTTP ${response.status} ${response.statusText}`);
+    throw new Error(buildServerErrorMessage({ response, rawBody, url }));
   }
 
   if (!rawBody.trim()) {
