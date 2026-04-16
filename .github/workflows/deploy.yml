@@ -36,7 +36,11 @@ jobs:
 
       - name: Build
         run: npm run build
-
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_OPENBUS_BASE_URL: ${{ vars.VITE_OPENBUS_BASE_URL || secrets.VITE_OPENBUS_BASE_URL }}
+          VITE_MAP_STYLE_URL: ${{ vars.VITE_MAP_STYLE_URL || secrets.VITE_MAP_STYLE_URL }}
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
