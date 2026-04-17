@@ -1,3 +1,7 @@
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
+
 function isValidCoordinate(value) {
   return typeof value === 'number' && Number.isFinite(value);
 }
@@ -6,54 +10,46 @@ function getValidMapPoints(result) {
   const points = Array.isArray(result?.mapPoints) ? result.mapPoints : [];
 
   return points.filter(
-    (point) =>
-      isValidCoordinate(point?.lat) &&
-      isValidCoordinate(point?.lon)
+    (point) => isValidCoordinate(point?.lat) && isValidCoordinate(point?.lon)
   );
-}
-
-function buildBounds(points) {
-  const latitudes = points.map((point) => point.lat);
-  const longitudes = points.map((point) => point.lon);
-  const minLat = Math.min(...latitudes);
-  const maxLat = Math.max(...latitudes);
-  const minLon = Math.min(...longitudes);
-  const maxLon = Math.max(...longitudes);
-  const latPadding = Math.max((maxLat - minLat) * 0.2, 0.01);
-  const lonPadding = Math.max((maxLon - minLon) * 0.2, 0.01);
-
-  return {
-    minLat: minLat - latPadding,
-    maxLat: maxLat + latPadding,
-    minLon: minLon - lonPadding,
-    maxLon: maxLon + lonPadding
-  };
-}
-
-function buildEmbedUrl(points) {
-  const bounds = buildBounds(points);
-  const bbox = [bounds.minLon, bounds.minLat, bounds.maxLon, bounds.maxLat]
-    .map((value) => value.toFixed(6))
-    .join(',');
-
-  return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik`;
-}
-
-function buildOpenStreetMapLink(points) {
-  const firstPoint = points[0];
-
-  return `https://www.openstreetmap.org/?mlat=${firstPoint.lat.toFixed(6)}&mlon=${firstPoint.lon.toFixed(6)}#map=13/${firstPoint.lat.toFixed(6)}/${firstPoint.lon.toFixed(6)}`;
 }
 
 function getDirectionLabel(direction) {
   return direction === 'toWork' ? 'מהבית לעבודה' : 'מהעבודה לבית';
 }
 
+function createPointIcon(role) {
+  const label = role === 'origin' ? 'א' : role === 'destination' ? 'י' : 'ה';
+
+  return L.divIcon({
+    className: 'map-marker-wrapper',
+    html: `<div class="map-marker map-marker-${role}">${label}</div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14]
+  });
+}
+
+function FitMapToPoints({ points }) {
+  const map = useMap();
+
+  if (points.length === 1) {
+    map.setView([points[0].lat, points[0].lon], 15);
+    return null;
+  }
+
+  const bounds = L.latLngBounds(points.map((point) => [point.lat, point.lon]));
+  map.fitBounds(bounds, {
+    padding: [20, 20],
+    maxZoom: 14
+  });
+
+  return null;
+}
+
 function MapPanel({ results, direction }) {
   const firstResult = results[0];
   const mapPoints = getValidMapPoints(firstResult);
-  const mapUrl = mapPoints.length >= 2 ? buildEmbedUrl(mapPoints) : '';
-  const externalMapUrl = mapPoints.length ? buildOpenStreetMapLink(mapPoints) : '';
+  const center = mapPoints[0] ? [mapPoints[0].lat, mapPoints[0].lon] : [31.8947, 34.8113];
 
   return (
     <div className="card map-panel">
@@ -66,31 +62,36 @@ function MapPanel({ results, direction }) {
               <div>מסלול מוצג: התוצאה הראשונה</div>
             </div>
 
-            <iframe
-              title="מפת מסלול"
-              src={mapUrl}
-              className="map-iframe"
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-            />
+            <div className="map-canvas">
+              <MapContainer center={center} zoom={13} scrollWheelZoom={true}>
+                <TileLayer
+                  attribution='&copy; OpenStreetMap contributors'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                <FitMapToPoints points={mapPoints} />
+                {mapPoints.map((point) => (
+                  <Marker
+                    key={point.id || `${point.role}-${point.lat}-${point.lon}`}
+                    position={[point.lat, point.lon]}
+                    icon={createPointIcon(point.role)}
+                  >
+                    <Popup>
+                      <strong>{point.label}</strong>
+                      <div>{point.name}</div>
+                    </Popup>
+                  </Marker>
+                ))}
+              </MapContainer>
+            </div>
 
             <ol className="map-points-list">
               {mapPoints.map((point) => (
-                <li key={point.id || `${point.role}-${point.lat}-${point.lon}`}>
+                <li key={point.id || `${point.role}-${point.lat}-${point.lon}-text`}>
                   <strong>{point.label}</strong>
                   <div>{point.name}</div>
                 </li>
               ))}
             </ol>
-
-            <a
-              href={externalMapUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="map-link"
-            >
-              פתח ב-OpenStreetMap
-            </a>
           </>
         ) : (
           <p>אין עדיין מספיק נקודות תקינות להצגת מפה.</p>
