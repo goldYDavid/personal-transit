@@ -100,16 +100,6 @@ function uniqueById(items) {
   });
 }
 
-function buildServerErrorMessage({ response, rawBody, url }) {
-  const body = rawBody.trim();
-
-  if (body) {
-    return `${response.status} ${response.statusText}\n${url.toString()}\n${body}`;
-  }
-
-  return `${response.status} ${response.statusText}\n${url.toString()}\nאין גוף תשובה`;
-}
-
 async function request(path, params = {}) {
   if (!baseUrl) {
     throw new Error('חסר משתנה סביבה VITE_OPENBUS_BASE_URL עבור נתוני תחבורה אמיתיים.');
