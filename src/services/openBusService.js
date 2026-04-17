@@ -90,6 +90,7 @@ function buildTripBase({
   transfers,
   originStop,
   destinationStop,
+  mapPoints,
   steps
 }) {
   return {
@@ -116,6 +117,7 @@ function buildTripBase({
         lon: destinationStop?.lon ?? null
       }
     },
+    mapPoints,
     steps
   };
 }
@@ -133,6 +135,24 @@ function buildDirectTrip({ originRideStop, destinationRideStop, originStop, dest
     transfers: 0,
     originStop,
     destinationStop,
+    mapPoints: [
+      {
+        id: `origin-${originStop.code}`,
+        role: 'origin',
+        label: 'תחנת מוצא',
+        name: getStopLabel(originStop),
+        lat: originStop?.lat ?? null,
+        lon: originStop?.lon ?? null
+      },
+      {
+        id: `destination-${destinationStop.code}`,
+        role: 'destination',
+        label: 'תחנת יעד',
+        name: getStopLabel(destinationStop),
+        lat: destinationStop?.lat ?? null,
+        lon: destinationStop?.lon ?? null
+      }
+    ],
     steps: [
       {
         type: 'board',
@@ -170,6 +190,32 @@ function buildTransferTrip({
     transfers: 1,
     originStop,
     destinationStop,
+    mapPoints: [
+      {
+        id: `origin-${originStop.code}`,
+        role: 'origin',
+        label: 'תחנת מוצא',
+        name: getStopLabel(originStop),
+        lat: originStop?.lat ?? null,
+        lon: originStop?.lon ?? null
+      },
+      {
+        id: `transfer-${transferStop.code}`,
+        role: 'transfer',
+        label: 'תחנת החלפה',
+        name: getStopLabel(transferStop),
+        lat: transferStop?.lat ?? null,
+        lon: transferStop?.lon ?? null
+      },
+      {
+        id: `destination-${destinationStop.code}`,
+        role: 'destination',
+        label: 'תחנת יעד',
+        name: getStopLabel(destinationStop),
+        lat: destinationStop?.lat ?? null,
+        lon: destinationStop?.lon ?? null
+      }
+    ],
     steps: [
       {
         type: 'board',
