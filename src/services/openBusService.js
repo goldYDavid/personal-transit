@@ -1,6 +1,7 @@
 import { minutesBetween, toLocalTimeString } from '../utils/timeUtils';
 
 const baseUrl = import.meta.env.VITE_OPENBUS_BASE_URL;
+const REQUEST_TIMEOUT_MS = 12000;
 const SEARCH_WINDOW_HOURS = 3;
 const TRANSFER_SEARCH_WINDOW_HOURS = 2;
 const MAX_ORIGIN_BOARDINGS = 24;
@@ -12,6 +13,38 @@ const MAX_RESULTS = 12;
 const stopByCodeCache = new Map();
 const rideStopsCache = new Map();
 const boardingsCache = new Map();
+
+const debugState = {
+  requestCount: 0,
+  lastStep: '',
+  lastUrl: '',
+  recentLogs: []
+};
+
+function pushDebug(message) {
+  debugState.recentLogs = [...debugState.recentLogs, message].slice(-20);
+}
+
+function setDebugStep(message) {
+  debugState.lastStep = message;
+  pushDebug(message);
+}
+
+function resetDebugLog() {
+  debugState.requestCount = 0;
+  debugState.lastStep = 'התחלת חיפוש OpenBus';
+  debugState.lastUrl = '';
+  debugState.recentLogs = ['התחלת חיפוש OpenBus'];
+}
+
+function getDebugSnapshot() {
+  return {
+    requestCount: debugState.requestCount,
+    lastStep: debugState.lastStep,
+    lastUrl: debugState.lastUrl,
+    recentLogs: [...debugState.recentLogs]
+  };
+}
 
 function buildServerErrorMessage({ response, rawBody, url }) {
   const body = rawBody.trim();
@@ -205,17 +238,32 @@ async function request(path, params = {}) {
     }
   });
 
+  debugState.requestCount += 1;
+  debugState.lastUrl = url.toString();
+  setDebugStep(`קריאת שרת ${debugState.requestCount}: ${url.pathname}`);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
   let response;
   try {
-    console.log('OPENBUS URL:', url.toString());
-    response = await fetch(url.toString());
-  } catch (_networkError) {
+    response = await fetch(url.toString(), { signal: controller.signal });
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      setDebugStep(`timeout אחרי ${REQUEST_TIMEOUT_MS / 1000} שניות`);
+      throw new Error(`OpenBus timeout אחרי ${REQUEST_TIMEOUT_MS / 1000} שניות\n${url.toString()}`);
+    }
+
+    setDebugStep('שגיאת רשת מול OpenBus');
     throw new Error(`שגיאת רשת מול OpenBus\n${url.toString()}`);
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   const rawBody = await response.text();
 
   if (!response.ok) {
+    setDebugStep(`כשל HTTP ${response.status}`);
     throw new Error(buildServerErrorMessage({ response, rawBody, url }));
   }
 
@@ -226,6 +274,7 @@ async function request(path, params = {}) {
   try {
     return JSON.parse(rawBody);
   } catch (_parseError) {
+    setDebugStep('כשל בפענוח JSON');
     throw new Error(rawBody);
   }
 }
@@ -234,9 +283,11 @@ async function resolveStopByCode(stopCode) {
   const normalizedCode = String(stopCode);
 
   if (stopByCodeCache.has(normalizedCode)) {
+    setDebugStep(`cache תחנה ${normalizedCode}`);
     return stopByCodeCache.get(normalizedCode);
   }
 
+  setDebugStep(`המרת קוד תחנה ${normalizedCode}`);
   const payload = await request('/gtfs_stops/list', {
     code: normalizedCode,
     limit: 20,
@@ -256,9 +307,11 @@ async function getRideStopsByRideId(rideId) {
   const cacheKey = String(rideId);
 
   if (rideStopsCache.has(cacheKey)) {
+    setDebugStep(`cache ride ${cacheKey}`);
     return rideStopsCache.get(cacheKey);
   }
 
+  setDebugStep(`טעינת תחנות עבור ride ${cacheKey}`);
   const payload = await request('/gtfs_ride_stops/list', {
     gtfs_ride_ids: rideId,
     limit: MAX_RIDE_STOPS,
@@ -273,9 +326,11 @@ async function getBoardingsForStop(stopId, fromIso, toIso, limit) {
   const cacheKey = `${stopId}|${fromIso}|${toIso}|${limit}`;
 
   if (boardingsCache.has(cacheKey)) {
+    setDebugStep(`cache יציאות מתחנה ${stopId}`);
     return boardingsCache.get(cacheKey);
   }
 
+  setDebugStep(`חיפוש יציאות מתחנה ${stopId}`);
   const payload = await request('/gtfs_ride_stops/list', {
     gtfs_stop_ids: stopId,
     arrival_time_from: fromIso,
@@ -305,6 +360,8 @@ function getTransferCandidates(rideStops, minSequence) {
 
 async function findDirectOrTransferTrips({ originStop, destinationStop, requestedAt }) {
   const results = [];
+  setDebugStep(`חיפוש מסלול מ-${originStop.code} אל ${destinationStop.code}`);
+
   const originBoardings = await getBoardingsForStop(
     originStop.id,
     requestedAt,
@@ -313,6 +370,7 @@ async function findDirectOrTransferTrips({ originStop, destinationStop, requeste
   );
 
   for (const originRideStop of originBoardings) {
+    setDebugStep(`בדיקת ride ראשון ${originRideStop.gtfs_ride_id}`);
     const firstRideStops = await getRideStopsByRideId(originRideStop.gtfs_ride_id);
     const directDestinationRideStop = findRideStopAfterSequence(
       firstRideStops,
@@ -321,6 +379,7 @@ async function findDirectOrTransferTrips({ originStop, destinationStop, requeste
     );
 
     if (directDestinationRideStop) {
+      setDebugStep(`נמצאה נסיעה ישירה ${originRideStop.gtfs_ride_id}`);
       results.push(
         buildDirectTrip({
           originRideStop,
@@ -345,6 +404,7 @@ async function findDirectOrTransferTrips({ originStop, destinationStop, requeste
         date: firstLegTransferRideStop.gtfs_stop__date
       });
 
+      setDebugStep(`בדיקת החלפה בתחנה ${transferStop.code}`);
       const transferAt = firstLegTransferRideStop.arrival_time || firstLegTransferRideStop.departure_time;
       const secondLegBoardings = await getBoardingsForStop(
         transferStop.id,
@@ -369,6 +429,7 @@ async function findDirectOrTransferTrips({ originStop, destinationStop, requeste
           continue;
         }
 
+        setDebugStep(`נמצאה החלפה ${originRideStop.gtfs_ride_id} -> ${secondLegTransferRideStop.gtfs_ride_id}`);
         results.push(
           buildTransferTrip({
             firstLegOriginRideStop: originRideStop,
@@ -383,28 +444,42 @@ async function findDirectOrTransferTrips({ originStop, destinationStop, requeste
     }
   }
 
+  setDebugStep(`החיפוש הסתיים עם ${results.length} תוצאות`);
   return uniqueById(results)
     .sort((a, b) => new Date(a.departureIso).getTime() - new Date(b.departureIso).getTime())
     .slice(0, MAX_RESULTS);
 }
 
 export const openBusService = {
+  resetDebugLog,
+  getDebugSnapshot,
+
   async getStopsByIds(stopCodes) {
     const stops = await Promise.all(stopCodes.map((stopCode) => resolveStopByCode(stopCode)));
     return stops.filter(Boolean);
   },
 
   async getPlannedTrips({ originStopId, destinationStopId, requestedAt }) {
-    const [originStop, destinationStop] = await Promise.all([
-      resolveStopByCode(originStopId),
-      resolveStopByCode(destinationStopId)
-    ]);
+    resetDebugLog();
 
-    return findDirectOrTransferTrips({
-      originStop,
-      destinationStop,
-      requestedAt
-    });
+    try {
+      const [originStop, destinationStop] = await Promise.all([
+        resolveStopByCode(originStopId),
+        resolveStopByCode(destinationStopId)
+      ]);
+
+      const trips = await findDirectOrTransferTrips({
+        originStop,
+        destinationStop,
+        requestedAt
+      });
+
+      setDebugStep(`חיפוש OpenBus הושלם. תוצאות: ${trips.length}`);
+      return trips;
+    } catch (error) {
+      setDebugStep(`חיפוש OpenBus נכשל: ${error.message}`);
+      throw error;
+    }
   },
 
   async getRealtimeForTrip(_tripId) {

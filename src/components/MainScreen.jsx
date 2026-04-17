@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { plannerService } from '../services/tripPlannerService';
 import { realtimeService } from '../services/realtimeService';
+import { openBusService } from '../services/openBusService';
 import { appConfig } from '../config/appConfig';
 import DirectionButtons from './DirectionButtons';
 import TimeSelector from './TimeSelector';
@@ -9,6 +10,24 @@ import MapPanel from './MapPanel';
 import ErrorBanner from './ErrorBanner';
 import LoadingState from './LoadingState';
 
+function DebugPanel({ debugInfo }) {
+  if (!debugInfo) {
+    return null;
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+      <strong>לוג חיפוש OpenBus</strong>
+      <div style={{ marginTop: 8 }}>קריאות שרת: {debugInfo.requestCount || 0}</div>
+      <div>שלב אחרון: {debugInfo.lastStep || 'אין'}</div>
+      <div>URL אחרון: {debugInfo.lastUrl || 'אין'}</div>
+      <div style={{ marginTop: 8 }}>
+        {(debugInfo.recentLogs || []).join('\n')}
+      </div>
+    </div>
+  );
+}
+
 function MainScreen({ user, onLogout }) {
   const [direction, setDirection] = useState('toWork');
   const [timeMode, setTimeMode] = useState('now');
@@ -16,15 +35,31 @@ function MainScreen({ user, onLogout }) {
   const [results, setResults] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [debugInfo, setDebugInfo] = useState(openBusService.getDebugSnapshot());
 
   const planningTime = useMemo(
     () => plannerService.resolveRequestedTime(timeMode, manualTime),
     [timeMode, manualTime]
   );
 
+  useEffect(() => {
+    if (!loading) {
+      setDebugInfo(openBusService.getDebugSnapshot());
+      return undefined;
+    }
+
+    const intervalId = setInterval(() => {
+      setDebugInfo(openBusService.getDebugSnapshot());
+    }, 500);
+
+    return () => clearInterval(intervalId);
+  }, [loading]);
+
   const loadTrips = async () => {
     setError('');
     setLoading(true);
+    setDebugInfo(openBusService.getDebugSnapshot());
+
     try {
       const planned = await plannerService.getPersonalTrips({
         userId: user.id,
@@ -34,9 +69,11 @@ function MainScreen({ user, onLogout }) {
 
       const withRealtime = await realtimeService.attachRealtimeStatus(planned);
       setResults(withRealtime);
+      setDebugInfo(openBusService.getDebugSnapshot());
     } catch (serviceError) {
       setResults([]);
       setError(serviceError.message || 'לא ניתן לתכנן נסיעות כרגע.');
+      setDebugInfo(openBusService.getDebugSnapshot());
     } finally {
       setLoading(false);
     }
@@ -70,6 +107,7 @@ function MainScreen({ user, onLogout }) {
       </div>
 
       {error ? <ErrorBanner message={error} /> : null}
+      <DebugPanel debugInfo={debugInfo} />
 
       {loading ? (
         <LoadingState text="מחשב נסיעות רלוונטיות..." />
