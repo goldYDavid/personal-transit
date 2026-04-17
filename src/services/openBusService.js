@@ -2,13 +2,13 @@ import { minutesBetween, toLocalTimeString } from '../utils/timeUtils';
 
 const baseUrl = import.meta.env.VITE_OPENBUS_BASE_URL;
 const REQUEST_TIMEOUT_MS = 12000;
-const SEARCH_WINDOW_HOURS = 3;
-const TRANSFER_SEARCH_WINDOW_HOURS = 2;
-const MAX_ORIGIN_BOARDINGS = 24;
-const MAX_TRANSFER_BOARDINGS = 12;
-const MAX_RIDE_STOPS = 300;
-const MAX_TRANSFER_CANDIDATES_PER_RIDE = 8;
-const MAX_RESULTS = 12;
+const SEARCH_WINDOW_HOURS = 2;
+const TRANSFER_SEARCH_WINDOW_HOURS = 1;
+const MAX_ORIGIN_BOARDINGS = 8;
+const MAX_TRANSFER_BOARDINGS = 4;
+const MAX_RIDE_STOPS = 200;
+const MAX_TRANSFER_CANDIDATES_PER_RIDE = 3;
+const MAX_RESULTS = 5;
 
 const stopByCodeCache = new Map();
 const rideStopsCache = new Map();
@@ -22,7 +22,7 @@ const debugState = {
 };
 
 function pushDebug(message) {
-  debugState.recentLogs = [...debugState.recentLogs, message].slice(-20);
+  debugState.recentLogs = [...debugState.recentLogs, message].slice(-40);
 }
 
 function setDebugStep(message) {
@@ -84,6 +84,7 @@ function normalizeLineValue(value) {
 
 function uniqueById(items) {
   const seen = new Set();
+
   return items.filter((item) => {
     if (seen.has(item.id)) {
       return false;
@@ -232,6 +233,7 @@ async function request(path, params = {}) {
   }
 
   const url = new URL(path, baseUrl);
+
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') {
       url.searchParams.set(key, value);
@@ -290,7 +292,7 @@ async function resolveStopByCode(stopCode) {
   setDebugStep(`המרת קוד תחנה ${normalizedCode}`);
   const payload = await request('/gtfs_stops/list', {
     code: normalizedCode,
-    limit: 20,
+    limit: 10,
     order_by: 'date desc,id desc'
   });
 
@@ -351,15 +353,39 @@ function findRideStopAfterSequence(rideStops, stopId, minSequence) {
   );
 }
 
-function getTransferCandidates(rideStops, minSequence) {
-  return rideStops
-    .filter((rideStop) => Number(rideStop.stop_sequence) > Number(minSequence))
-    .filter((rideStop) => Number(rideStop.pickup_type) !== 1)
-    .slice(0, MAX_TRANSFER_CANDIDATES_PER_RIDE);
+function getTransferCandidates(rideStops, minSequence, checkedTransferStops) {
+  const candidates = [];
+
+  for (const rideStop of rideStops) {
+    if (Number(rideStop.stop_sequence) <= Number(minSequence)) {
+      continue;
+    }
+
+    if (Number(rideStop.pickup_type) === 1) {
+      continue;
+    }
+
+    const transferStopKey = String(rideStop.gtfs_stop_id);
+    if (checkedTransferStops.has(transferStopKey)) {
+      continue;
+    }
+
+    checkedTransferStops.add(transferStopKey);
+    candidates.push(rideStop);
+
+    if (candidates.length >= MAX_TRANSFER_CANDIDATES_PER_RIDE) {
+      break;
+    }
+  }
+
+  return candidates;
 }
 
 async function findDirectOrTransferTrips({ originStop, destinationStop, requestedAt }) {
   const results = [];
+  const checkedTransferStops = new Set();
+  const checkedSecondLegRides = new Set();
+
   setDebugStep(`חיפוש מסלול מ-${originStop.code} אל ${destinationStop.code}`);
 
   const originBoardings = await getBoardingsForStop(
@@ -370,8 +396,13 @@ async function findDirectOrTransferTrips({ originStop, destinationStop, requeste
   );
 
   for (const originRideStop of originBoardings) {
+    if (results.length >= MAX_RESULTS) {
+      break;
+    }
+
     setDebugStep(`בדיקת ride ראשון ${originRideStop.gtfs_ride_id}`);
     const firstRideStops = await getRideStopsByRideId(originRideStop.gtfs_ride_id);
+
     const directDestinationRideStop = findRideStopAfterSequence(
       firstRideStops,
       destinationStop.id,
@@ -391,9 +422,17 @@ async function findDirectOrTransferTrips({ originStop, destinationStop, requeste
       continue;
     }
 
-    const transferCandidates = getTransferCandidates(firstRideStops, originRideStop.stop_sequence);
+    const transferCandidates = getTransferCandidates(
+      firstRideStops,
+      originRideStop.stop_sequence,
+      checkedTransferStops
+    );
 
     for (const firstLegTransferRideStop of transferCandidates) {
+      if (results.length >= MAX_RESULTS) {
+        break;
+      }
+
       const transferStop = toStopView({
         id: firstLegTransferRideStop.gtfs_stop_id,
         code: firstLegTransferRideStop.gtfs_stop__code,
@@ -405,7 +444,9 @@ async function findDirectOrTransferTrips({ originStop, destinationStop, requeste
       });
 
       setDebugStep(`בדיקת החלפה בתחנה ${transferStop.code}`);
-      const transferAt = firstLegTransferRideStop.arrival_time || firstLegTransferRideStop.departure_time;
+      const transferAt =
+        firstLegTransferRideStop.arrival_time || firstLegTransferRideStop.departure_time;
+
       const secondLegBoardings = await getBoardingsForStop(
         transferStop.id,
         transferAt,
@@ -414,11 +455,23 @@ async function findDirectOrTransferTrips({ originStop, destinationStop, requeste
       );
 
       for (const secondLegTransferRideStop of secondLegBoardings) {
+        if (results.length >= MAX_RESULTS) {
+          break;
+        }
+
         if (String(secondLegTransferRideStop.gtfs_ride_id) === String(originRideStop.gtfs_ride_id)) {
           continue;
         }
 
+        const secondRideKey = String(secondLegTransferRideStop.gtfs_ride_id);
+        if (checkedSecondLegRides.has(secondRideKey)) {
+          continue;
+        }
+
+        checkedSecondLegRides.add(secondRideKey);
+
         const secondRideStops = await getRideStopsByRideId(secondLegTransferRideStop.gtfs_ride_id);
+
         const secondLegDestinationRideStop = findRideStopAfterSequence(
           secondRideStops,
           destinationStop.id,
@@ -429,7 +482,10 @@ async function findDirectOrTransferTrips({ originStop, destinationStop, requeste
           continue;
         }
 
-        setDebugStep(`נמצאה החלפה ${originRideStop.gtfs_ride_id} -> ${secondLegTransferRideStop.gtfs_ride_id}`);
+        setDebugStep(
+          `נמצאה החלפה ${originRideStop.gtfs_ride_id} -> ${secondLegTransferRideStop.gtfs_ride_id}`
+        );
+
         results.push(
           buildTransferTrip({
             firstLegOriginRideStop: originRideStop,
@@ -440,11 +496,14 @@ async function findDirectOrTransferTrips({ originStop, destinationStop, requeste
             destinationStop
           })
         );
+
+        break;
       }
     }
   }
 
   setDebugStep(`החיפוש הסתיים עם ${results.length} תוצאות`);
+
   return uniqueById(results)
     .sort((a, b) => new Date(a.departureIso).getTime() - new Date(b.departureIso).getTime())
     .slice(0, MAX_RESULTS);
