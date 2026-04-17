@@ -132,3 +132,31 @@ select {
   margin: 8px 0 0;
   padding-inline-start: 20px;
 }
+
+.map-meta {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.map-iframe {
+  width: 100%;
+  min-height: 320px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.map-points-list {
+  margin: 12px 0 0;
+  padding-inline-start: 20px;
+}
+
+.map-points-list li {
+  margin-bottom: 8px;
+}
+
+.map-link {
+  display: inline-block;
+  margin-top: 12px;
+}
