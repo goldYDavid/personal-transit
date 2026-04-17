@@ -171,13 +171,15 @@ function buildDirectTrip({ originRideStop, destinationRideStop, originStop, dest
       {
         type: 'board',
         line,
-        text: line
-          ? `עלייה לקו ${line} בתחנת ${getStopLabel(originStop)}`
-          : `עלייה בתחנת ${getStopLabel(originStop)}`
+        time: toLocalTimeString(departure),
+        stopName: getStopLabel(originStop),
+        text: line ? `עלייה לקו ${line}` : 'עלייה לאוטובוס'
       },
       {
         type: 'arrival',
-        text: `ירידה בתחנת ${getStopLabel(destinationStop)}`
+        time: toLocalTimeString(arrival),
+        stopName: getStopLabel(destinationStop),
+        text: 'ירידה בתחנת היעד'
       }
     ]
   });
@@ -185,6 +187,7 @@ function buildDirectTrip({ originRideStop, destinationRideStop, originStop, dest
 
 function buildTransferTrip({
   firstLegOriginRideStop,
+  firstLegTransferRideStop,
   secondLegTransferRideStop,
   secondLegDestinationRideStop,
   originStop,
@@ -194,7 +197,10 @@ function buildTransferTrip({
   const firstLine = getLineFromRideStop(firstLegOriginRideStop);
   const secondLine = getLineFromRideStop(secondLegTransferRideStop);
   const departure = firstLegOriginRideStop.departure_time || firstLegOriginRideStop.arrival_time;
+  const transferArrival = firstLegTransferRideStop.arrival_time || firstLegTransferRideStop.departure_time;
+  const secondDeparture = secondLegTransferRideStop.departure_time || secondLegTransferRideStop.arrival_time;
   const arrival = secondLegDestinationRideStop.arrival_time || secondLegDestinationRideStop.departure_time;
+  const waitMinutes = Math.max(0, minutesBetween(transferArrival, secondDeparture));
 
   return buildTripBase({
     id: `transfer-${firstLegOriginRideStop.gtfs_ride_id}-${secondLegTransferRideStop.gtfs_ride_id}-${originStop.code}-${destinationStop.code}`,
@@ -208,20 +214,30 @@ function buildTransferTrip({
       {
         type: 'board',
         line: firstLine,
-        text: firstLine
-          ? `עלייה לקו ${firstLine} בתחנת ${getStopLabel(originStop)}`
-          : `עלייה בתחנת ${getStopLabel(originStop)}`
+        time: toLocalTimeString(departure),
+        stopName: getStopLabel(originStop),
+        text: firstLine ? `עלייה לקו ${firstLine}` : 'עלייה לאוטובוס'
+      },
+      {
+        type: 'transfer_arrival',
+        line: firstLine,
+        time: toLocalTimeString(transferArrival),
+        stopName: getStopLabel(transferStop),
+        text: 'הגעה לתחנת ההחלפה'
       },
       {
         type: 'transfer',
         line: secondLine,
-        text: secondLine
-          ? `החלפה בתחנת ${getStopLabel(transferStop)} לקו ${secondLine}`
-          : `החלפה בתחנת ${getStopLabel(transferStop)}`
+        time: toLocalTimeString(secondDeparture),
+        stopName: getStopLabel(transferStop),
+        waitMinutes,
+        text: secondLine ? `החלפה לקו ${secondLine}` : 'החלפה לאוטובוס המשך'
       },
       {
         type: 'arrival',
-        text: `ירידה בתחנת ${getStopLabel(destinationStop)}`
+        time: toLocalTimeString(arrival),
+        stopName: getStopLabel(destinationStop),
+        text: 'ירידה בתחנת היעד'
       }
     ]
   });
@@ -490,6 +506,7 @@ async function findDirectOrTransferTrips({ originStop, destinationStop, requeste
         results.push(
           buildTransferTrip({
             firstLegOriginRideStop: originRideStop,
+            firstLegTransferRideStop,
             secondLegTransferRideStop,
             secondLegDestinationRideStop,
             originStop,
