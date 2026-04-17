@@ -7,7 +7,7 @@ const TRANSFER_SEARCH_WINDOW_HOURS = 1;
 const MAX_ORIGIN_BOARDINGS = 8;
 const MAX_TRANSFER_BOARDINGS = 4;
 const MAX_RIDE_STOPS = 200;
-const MAX_TRANSFER_CANDIDATES_PER_RIDE = 3;
+const MAX_TRANSFER_CANDIDATES_PER_RIDE = 5;
 const MAX_RESULTS = 5;
 
 const stopByCodeCache = new Map();
@@ -383,7 +383,6 @@ function getTransferCandidates(rideStops, minSequence, checkedTransferStops) {
 
 async function findDirectOrTransferTrips({ originStop, destinationStop, requestedAt }) {
   const results = [];
-  const checkedTransferStops = new Set();
   const checkedSecondLegRides = new Set();
 
   setDebugStep(`חיפוש מסלול מ-${originStop.code} אל ${destinationStop.code}`);
@@ -396,6 +395,8 @@ async function findDirectOrTransferTrips({ originStop, destinationStop, requeste
   );
 
   for (const originRideStop of originBoardings) {
+    const checkedTransferStops = new Set();
+
     if (results.length >= MAX_RESULTS) {
       break;
     }
@@ -463,7 +464,7 @@ async function findDirectOrTransferTrips({ originStop, destinationStop, requeste
           continue;
         }
 
-        const secondRideKey = String(secondLegTransferRideStop.gtfs_ride_id);
+        const secondRideKey = `${transferStop.id}|${secondLegTransferRideStop.gtfs_ride_id}`;
         if (checkedSecondLegRides.has(secondRideKey)) {
           continue;
         }
